@@ -46,9 +46,16 @@ impl TmuxClient {
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('|').collect();
             if parts.len() >= 4 {
+                // Parse window count, defaulting to 1 if parsing fails
+                // This maintains backwards compatibility if tmux format changes
+                let windows = parts[1].parse().unwrap_or_else(|e| {
+                    eprintln!("Warning: Failed to parse window count '{}': {}", parts[1], e);
+                    1
+                });
+                
                 sessions.push(TmuxSession {
                     name: parts[0].to_string(),
-                    windows: parts[1].parse().unwrap_or(0),
+                    windows,
                     attached: parts[2] != "0",
                     created: parts[3].to_string(),
                 });
@@ -123,10 +130,17 @@ impl TmuxClient {
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('|').collect();
             if parts.len() >= 4 {
+                // Parse pane count, defaulting to 1 if parsing fails
+                // This maintains backwards compatibility if tmux format changes
+                let panes = parts[2].parse().unwrap_or_else(|e| {
+                    eprintln!("Warning: Failed to parse pane count '{}': {}", parts[2], e);
+                    1
+                });
+                
                 windows.push(TmuxWindow {
                     id: parts[0].to_string(),
                     name: parts[1].to_string(),
-                    panes: parts[2].parse().unwrap_or(0),
+                    panes,
                     active: parts[3] == "1",
                 });
             }

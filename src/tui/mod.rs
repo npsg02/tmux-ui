@@ -68,7 +68,11 @@ impl App {
         )?;
         terminal.show_cursor()?;
 
-        // If we need to attach to a session, do it after restoring terminal
+        // If we need to attach to a session, do it after restoring terminal.
+        // This is crucial because tmux attach needs to take over the terminal,
+        // which requires that we've fully released our terminal handling first.
+        // Attempting to attach while still in alternate screen or raw mode
+        // would cause terminal corruption and keyboard input issues.
         if let Some(session_name) = &self.attach_on_exit {
             self.client.attach_session(session_name)?;
         }
