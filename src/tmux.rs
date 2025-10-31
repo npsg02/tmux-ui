@@ -17,14 +17,6 @@ pub struct TmuxWindow {
     pub active: bool,
 }
 
-#[derive(Debug, Clone)]
-pub struct TmuxPane {
-    pub id: String,
-    pub active: bool,
-    pub width: usize,
-    pub height: usize,
-}
-
 pub struct TmuxClient;
 
 impl TmuxClient {
@@ -193,12 +185,14 @@ impl TmuxClient {
 
     /// Detach all clients from a session
     pub fn detach_session(&self, name: &str) -> Result<()> {
-        let _status = Command::new("tmux")
+        // Detach all clients from the session
+        // This may fail if no clients are attached, which is not an error
+        let _result = Command::new("tmux")
             .args(["detach-client", "-s", name])
-            .status()
-            .context("Failed to detach from tmux session")?;
+            .status();
 
-        // This can fail if no clients are attached, which is fine
+        // Always return Ok since detaching from a session with no attached clients
+        // is not an error condition
         Ok(())
     }
 }

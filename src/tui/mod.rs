@@ -23,6 +23,7 @@ pub struct App {
     input: String,
     input_mode: InputMode,
     status_message: String,
+    attach_on_exit: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +45,7 @@ impl App {
             input: String::new(),
             input_mode: InputMode::Normal,
             status_message: "Welcome to tmux-ui! Press 'h' for help.".to_string(),
+            attach_on_exit: None,
         }
     }
 
@@ -65,6 +67,11 @@ impl App {
             DisableMouseCapture
         )?;
         terminal.show_cursor()?;
+
+        // If we need to attach to a session, do it after restoring terminal
+        if let Some(session_name) = &self.attach_on_exit {
+            self.client.attach_session(session_name)?;
+        }
 
         result
     }
@@ -107,7 +114,7 @@ impl App {
         match key {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::Char('h') => {
-                self.status_message = "Commands: q=quit, n=new session, d=delete session, a=attach, r=rename, w=new window, k=kill window, x=detach, ↑↓=navigate, Enter=attach".to_string();
+                self.status_message = "Commands: q=quit, n=new session, d=delete session, a=attach, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate, Enter=attach".to_string();
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::CreatingSession;
@@ -146,9 +153,10 @@ impl App {
                 if let Some(index) = self.selected.selected() {
                     if index < self.sessions.len() {
                         let session = &self.sessions[index];
-                        // We need to exit the TUI before attaching
+                        // Store the session to attach to after TUI exits
+                        self.attach_on_exit = Some(session.name.clone());
                         self.status_message = format!("Attaching to session '{}'...", session.name);
-                        // Return true to exit, then attach
+                        // Return true to exit TUI, then attach
                         return Ok(true);
                     }
                 }
