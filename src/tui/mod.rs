@@ -118,7 +118,7 @@ impl App {
         match key {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::Char('h') => {
-                self.status_message = "Commands: q=quit, n=new session, d=delete session, a=attach, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate, Enter=attach".to_string();
+                self.status_message = "Commands: q=quit, n=new, d=delete, a/Enter=attach/switch, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate".to_string();
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::CreatingSession;
