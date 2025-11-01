@@ -186,14 +186,31 @@ impl App {
                 if let Some(index) = self.selected.selected() {
                     if index < self.sessions.len() {
                         let session = &self.sessions[index];
-                        match self.client.detach_session(&session.name) {
-                            Ok(_) => {
-                                self.status_message =
-                                    format!("Detached from session '{}'", session.name);
-                                self.refresh_sessions().await?;
+                        
+                        // Check if we're inside a tmux session
+                        if self.client.is_inside_tmux() {
+                            // When inside tmux, detach the current client (exits the TUI and tmux)
+                            match self.client.detach_current_client() {
+                                Ok(_) => {
+                                    self.status_message = "Detaching from tmux...".to_string();
+                                    // Return true to exit TUI since we're detaching from tmux
+                                    return Ok(true);
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Error detaching: {}", e);
+                                }
                             }
-                            Err(e) => {
-                                self.status_message = format!("Error detaching: {}", e);
+                        } else {
+                            // When outside tmux, detach all clients from the selected session
+                            match self.client.detach_session(&session.name) {
+                                Ok(_) => {
+                                    self.status_message =
+                                        format!("Detached from session '{}'", session.name);
+                                    self.refresh_sessions().await?;
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Error detaching: {}", e);
+                                }
                             }
                         }
                     }

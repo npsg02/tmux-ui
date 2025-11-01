@@ -217,6 +217,20 @@ impl TmuxClient {
         Ok(())
     }
 
+    /// Detach the current client (when inside tmux)
+    pub fn detach_current_client(&self) -> Result<()> {
+        let status = Command::new("tmux")
+            .args(["detach-client"])
+            .status()
+            .context("Failed to detach current client")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to detach current client");
+        }
+
+        Ok(())
+    }
+
     /// Detach all clients from a session
     pub fn detach_session(&self, name: &str) -> Result<()> {
         // Detach all clients from the session
