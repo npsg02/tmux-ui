@@ -1,55 +1,50 @@
-use template_rust::{database::TodoDatabase, models::Todo};
+use tmux_ui::tmux::TmuxClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize database
-    let db = TodoDatabase::new("example.db").await?;
+    // Initialize tmux client
+    let client = TmuxClient::new();
 
-    // Create some todos
-    let todo1 = Todo::new(
-        "Learn Rust".to_string(),
-        Some("Study ownership and borrowing".to_string()),
-    );
-    let todo2 = Todo::new("Build a CLI app".to_string(), None);
-    let todo3 = Todo::new(
-        "Write tests".to_string(),
-        Some("Unit and integration tests".to_string()),
-    );
+    // Create some test sessions
+    println!("Creating test sessions...");
+    client.create_session("example-1")?;
+    client.create_session("example-2")?;
+    client.create_session("example-3")?;
 
-    // Save todos to database
-    db.create_todo(&todo1).await?;
-    db.create_todo(&todo2).await?;
-    db.create_todo(&todo3).await?;
-
-    // List all todos
-    println!("All todos:");
-    let todos = db.get_all_todos().await?;
-    for todo in &todos {
-        let status = if todo.completed { "✓" } else { "○" };
-        println!("  {} {}", status, todo.title);
-        if let Some(description) = &todo.description {
-            println!("    {}", description);
-        }
+    // List all sessions
+    println!("\nAll tmux sessions:");
+    let sessions = client.list_sessions()?;
+    for session in &sessions {
+        let attached = if session.attached { "●" } else { "○" };
+        println!(
+            "  {} {} - {} window(s)",
+            attached, session.name, session.windows
+        );
     }
 
-    // Complete the first todo
-    let mut todo = todos[0].clone();
-    todo.complete();
-    db.update_todo(&todo).await?;
+    // Create a window in the first session
+    println!("\nCreating a new window in example-1...");
+    client.create_window("example-1", Some("test-window"))?;
 
-    println!("\nAfter completing first todo:");
-    let updated_todos = db.get_all_todos().await?;
-    for todo in &updated_todos {
-        let status = if todo.completed { "✓" } else { "○" };
-        println!("  {} {}", status, todo.title);
+    // List sessions again to see the window count increase
+    println!("\nSessions after creating a window:");
+    let updated_sessions = client.list_sessions()?;
+    for session in &updated_sessions {
+        let attached = if session.attached { "●" } else { "○" };
+        println!(
+            "  {} {} - {} window(s)",
+            attached, session.name, session.windows
+        );
     }
 
-    // Get only pending todos
-    println!("\nPending todos:");
-    let pending_todos = db.get_todos_by_status(false).await?;
-    for todo in &pending_todos {
-        println!("  ○ {}", todo.title);
-    }
+    // Clean up - kill the test sessions
+    println!("\nCleaning up test sessions...");
+    client.kill_session("example-1")?;
+    client.kill_session("example-2")?;
+    client.kill_session("example-3")?;
+
+    println!("Done!");
 
     Ok(())
 }
+

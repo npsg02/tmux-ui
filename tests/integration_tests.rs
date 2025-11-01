@@ -1,46 +1,35 @@
-use template_rust::models::Todo;
+use tmux_ui::tmux::{TmuxClient, TmuxSession};
 
 #[test]
-fn test_todo_creation() {
-    let todo = Todo::new(
-        "Test todo".to_string(),
-        Some("Test description".to_string()),
-    );
-
-    assert_eq!(todo.title, "Test todo");
-    assert_eq!(todo.description, Some("Test description".to_string()));
-    assert!(!todo.completed);
-    assert!(!todo.id.is_empty());
+fn test_tmux_client_creation() {
+    let _client = TmuxClient::new();
+    // Just verify we can create a client without panicking
+    // TmuxClient is a unit struct, so size might be 0
 }
 
 #[test]
-fn test_todo_completion() {
-    let mut todo = Todo::new("Test todo".to_string(), None);
-    let original_updated_at = todo.updated_at;
+fn test_session_struct() {
+    let session = TmuxSession {
+        name: "test-session".to_string(),
+        windows: 2,
+        attached: true,
+        created: "1234567890".to_string(),
+    };
 
-    // Wait a moment to ensure timestamp change
-    std::thread::sleep(std::time::Duration::from_millis(1));
-
-    todo.complete();
-
-    assert!(todo.completed);
-    assert!(todo.updated_at > original_updated_at);
+    assert_eq!(session.name, "test-session");
+    assert_eq!(session.windows, 2);
+    assert!(session.attached);
+    assert_eq!(session.created, "1234567890");
 }
 
 #[test]
-fn test_todo_update() {
-    let mut todo = Todo::new("Original title".to_string(), None);
-    let original_updated_at = todo.updated_at;
-
-    // Wait a moment to ensure timestamp change
-    std::thread::sleep(std::time::Duration::from_millis(1));
-
-    todo.update(
-        Some("Updated title".to_string()),
-        Some("New description".to_string()),
-    );
-
-    assert_eq!(todo.title, "Updated title");
-    assert_eq!(todo.description, Some("New description".to_string()));
-    assert!(todo.updated_at > original_updated_at);
+fn test_list_sessions_when_none_exist() {
+    // This test assumes tmux might not have sessions
+    // It should not panic
+    let client = TmuxClient::new();
+    let result = client.list_sessions();
+    // Should either return empty vec or sessions if they exist
+    assert!(result.is_ok());
 }
+
+

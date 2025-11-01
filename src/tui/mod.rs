@@ -1,5 +1,4 @@
-use crate::database::TodoDatabase;
-use crate::models::Todo;
+use crate::tmux::{TmuxClient, TmuxSession};
 use crate::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
@@ -18,41 +17,35 @@ use tokio::time::Duration;
 
 /// Application state
 pub struct App {
-    db: TodoDatabase,
-    todos: Vec<Todo>,
+    client: TmuxClient,
+    sessions: Vec<TmuxSession>,
     selected: ListState,
     input: String,
     input_mode: InputMode,
     status_message: String,
-    filter: Filter,
+    attach_on_exit: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub enum InputMode {
     Normal,
-    Editing,
-}
-
-#[derive(Debug, Clone)]
-pub enum Filter {
-    All,
-    Completed,
-    Pending,
+    CreatingSession,
+    RenamingSession,
 }
 
 impl App {
-    pub fn new(db: TodoDatabase) -> Self {
+    pub fn new(client: TmuxClient) -> Self {
         let mut selected = ListState::default();
         selected.select(Some(0));
 
         Self {
-            db,
-            todos: Vec::new(),
+            client,
+            sessions: Vec::new(),
             selected,
             input: String::new(),
             input_mode: InputMode::Normal,
-            status_message: "Welcome to Todo App! Press 'h' for help.".to_string(),
-            filter: Filter::All,
+            status_message: "Welcome to tmux-ui! Press 'h' for help.".to_string(),
+            attach_on_exit: None,
         }
     }
 
@@ -75,11 +68,20 @@ impl App {
         )?;
         terminal.show_cursor()?;
 
+        // If we need to attach to a session, do it after restoring terminal.
+        // This is crucial because tmux attach needs to take over the terminal,
+        // which requires that we've fully released our terminal handling first.
+        // Attempting to attach while still in alternate screen or raw mode
+        // would cause terminal corruption and keyboard input issues.
+        if let Some(session_name) = &self.attach_on_exit {
+            self.client.attach_session(session_name)?;
+        }
+
         result
     }
 
     async fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
-        self.refresh_todos().await?;
+        self.refresh_sessions().await?;
 
         loop {
             terminal.draw(|f| self.ui(f))?;
@@ -93,8 +95,13 @@ impl App {
                                     break;
                                 }
                             }
-                            InputMode::Editing => {
-                                if self.handle_editing_input(key.code).await? {
+                            InputMode::CreatingSession => {
+                                if self.handle_creating_input(key.code).await? {
+                                    break;
+                                }
+                            }
+                            InputMode::RenamingSession => {
+                                if self.handle_renaming_input(key.code).await? {
                                     break;
                                 }
                             }
@@ -111,61 +118,91 @@ impl App {
         match key {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::Char('h') => {
-                self.status_message = "Commands: q=quit, n=new todo, d=delete, c=toggle complete, a=all, p=pending, f=finished, ↑↓=navigate".to_string();
+                self.status_message = "Commands: q=quit, n=new session, d=delete session, a=attach, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate, Enter=attach".to_string();
             }
             KeyCode::Char('n') => {
-                self.input_mode = InputMode::Editing;
+                self.input_mode = InputMode::CreatingSession;
                 self.input.clear();
-                self.status_message = "Enter new todo (ESC to cancel, Enter to save):".to_string();
+                self.status_message =
+                    "Enter session name (ESC to cancel, Enter to create):".to_string();
+            }
+            KeyCode::Char('r') => {
+                if let Some(index) = self.selected.selected() {
+                    if index < self.sessions.len() {
+                        self.input_mode = InputMode::RenamingSession;
+                        self.input.clear();
+                        self.status_message =
+                            "Enter new session name (ESC to cancel, Enter to rename):".to_string();
+                    }
+                }
             }
             KeyCode::Char('d') => {
                 if let Some(index) = self.selected.selected() {
-                    if index < self.todos.len() {
-                        let todo = &self.todos[index];
-                        self.db.delete_todo(&todo.id).await?;
-                        self.refresh_todos().await?;
-                        self.status_message = "Todo deleted!".to_string();
-                    }
-                }
-            }
-            KeyCode::Char('c') => {
-                if let Some(index) = self.selected.selected() {
-                    if index < self.todos.len() {
-                        let mut todo = self.todos[index].clone();
-                        if todo.completed {
-                            todo.uncomplete();
-                        } else {
-                            todo.complete();
+                    if index < self.sessions.len() {
+                        let session = &self.sessions[index];
+                        match self.client.kill_session(&session.name) {
+                            Ok(_) => {
+                                self.status_message =
+                                    format!("Session '{}' deleted!", session.name);
+                                self.refresh_sessions().await?;
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Error deleting session: {}", e);
+                            }
                         }
-                        self.db.update_todo(&todo).await?;
-                        self.refresh_todos().await?;
-                        self.status_message = if todo.completed {
-                            "Todo marked as completed!".to_string()
-                        } else {
-                            "Todo marked as pending!".to_string()
-                        };
                     }
                 }
             }
-            KeyCode::Char('a') => {
-                self.filter = Filter::All;
-                self.refresh_todos().await?;
-                self.status_message = "Showing all todos".to_string();
+            KeyCode::Char('a') | KeyCode::Enter => {
+                if let Some(index) = self.selected.selected() {
+                    if index < self.sessions.len() {
+                        let session = &self.sessions[index];
+                        // Store the session to attach to after TUI exits
+                        self.attach_on_exit = Some(session.name.clone());
+                        self.status_message = format!("Attaching to session '{}'...", session.name);
+                        // Return true to exit TUI, then attach
+                        return Ok(true);
+                    }
+                }
             }
-            KeyCode::Char('p') => {
-                self.filter = Filter::Pending;
-                self.refresh_todos().await?;
-                self.status_message = "Showing pending todos".to_string();
+            KeyCode::Char('x') => {
+                if let Some(index) = self.selected.selected() {
+                    if index < self.sessions.len() {
+                        let session = &self.sessions[index];
+                        match self.client.detach_session(&session.name) {
+                            Ok(_) => {
+                                self.status_message =
+                                    format!("Detached from session '{}'", session.name);
+                                self.refresh_sessions().await?;
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Error detaching: {}", e);
+                            }
+                        }
+                    }
+                }
             }
-            KeyCode::Char('f') => {
-                self.filter = Filter::Completed;
-                self.refresh_todos().await?;
-                self.status_message = "Showing completed todos".to_string();
+            KeyCode::Char('w') => {
+                if let Some(index) = self.selected.selected() {
+                    if index < self.sessions.len() {
+                        let session = &self.sessions[index];
+                        match self.client.create_window(&session.name, None) {
+                            Ok(_) => {
+                                self.status_message =
+                                    format!("New window created in session '{}'", session.name);
+                                self.refresh_sessions().await?;
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Error creating window: {}", e);
+                            }
+                        }
+                    }
+                }
             }
             KeyCode::Down => {
                 let i = match self.selected.selected() {
                     Some(i) => {
-                        if i >= self.todos.len().saturating_sub(1) {
+                        if i >= self.sessions.len().saturating_sub(1) {
                             0
                         } else {
                             i + 1
@@ -179,7 +216,7 @@ impl App {
                 let i = match self.selected.selected() {
                     Some(i) => {
                         if i == 0 {
-                            self.todos.len().saturating_sub(1)
+                            self.sessions.len().saturating_sub(1)
                         } else {
                             i - 1
                         }
@@ -188,21 +225,32 @@ impl App {
                 };
                 self.selected.select(Some(i));
             }
+            KeyCode::Char('R') => {
+                self.refresh_sessions().await?;
+                self.status_message = "Sessions refreshed!".to_string();
+            }
             _ => {}
         }
         Ok(false)
     }
 
-    async fn handle_editing_input(&mut self, key: KeyCode) -> Result<bool> {
+    async fn handle_creating_input(&mut self, key: KeyCode) -> Result<bool> {
         match key {
             KeyCode::Enter => {
                 if !self.input.is_empty() {
-                    let todo = Todo::new(self.input.trim().to_string(), None);
-                    self.db.create_todo(&todo).await?;
-                    self.input.clear();
-                    self.input_mode = InputMode::Normal;
-                    self.refresh_todos().await?;
-                    self.status_message = "Todo added!".to_string();
+                    let session_name = self.input.trim().to_string();
+                    match self.client.create_session(&session_name) {
+                        Ok(_) => {
+                            self.status_message = format!("Session '{}' created!", session_name);
+                            self.input.clear();
+                            self.input_mode = InputMode::Normal;
+                            self.refresh_sessions().await?;
+                        }
+                        Err(e) => {
+                            self.status_message = format!("Error creating session: {}", e);
+                            self.input_mode = InputMode::Normal;
+                        }
+                    }
                 }
             }
             KeyCode::Char(c) => {
@@ -221,19 +269,58 @@ impl App {
         Ok(false)
     }
 
-    async fn refresh_todos(&mut self) -> Result<()> {
-        self.todos = match self.filter {
-            Filter::All => self.db.get_all_todos().await?,
-            Filter::Completed => self.db.get_todos_by_status(true).await?,
-            Filter::Pending => self.db.get_todos_by_status(false).await?,
-        };
+    async fn handle_renaming_input(&mut self, key: KeyCode) -> Result<bool> {
+        match key {
+            KeyCode::Enter => {
+                if !self.input.is_empty() {
+                    if let Some(index) = self.selected.selected() {
+                        if index < self.sessions.len() {
+                            let old_name = self.sessions[index].name.clone();
+                            let new_name = self.input.trim().to_string();
+                            match self.client.rename_session(&old_name, &new_name) {
+                                Ok(_) => {
+                                    self.status_message = format!(
+                                        "Session renamed from '{}' to '{}'!",
+                                        old_name, new_name
+                                    );
+                                    self.input.clear();
+                                    self.input_mode = InputMode::Normal;
+                                    self.refresh_sessions().await?;
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Error renaming session: {}", e);
+                                    self.input_mode = InputMode::Normal;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            KeyCode::Char(c) => {
+                self.input.push(c);
+            }
+            KeyCode::Backspace => {
+                self.input.pop();
+            }
+            KeyCode::Esc => {
+                self.input.clear();
+                self.input_mode = InputMode::Normal;
+                self.status_message = "Cancelled".to_string();
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    async fn refresh_sessions(&mut self) -> Result<()> {
+        self.sessions = self.client.list_sessions()?;
 
         // Adjust selection if needed
-        if self.todos.is_empty() {
+        if self.sessions.is_empty() {
             self.selected.select(None);
         } else if let Some(selected) = self.selected.selected() {
-            if selected >= self.todos.len() {
-                self.selected.select(Some(self.todos.len() - 1));
+            if selected >= self.sessions.len() {
+                self.selected.select(Some(self.sessions.len() - 1));
             }
         } else {
             self.selected.select(Some(0));
@@ -254,58 +341,60 @@ impl App {
             .split(f.size());
 
         // Title
-        let title = Paragraph::new("📝 Todo App")
+        let title = Paragraph::new("🖥️  tmux-ui - Session Manager")
             .style(Style::default().fg(Color::Cyan))
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(title, chunks[0]);
 
-        // Todo list
-        let todos: Vec<ListItem> = self
-            .todos
+        // Session list
+        let sessions: Vec<ListItem> = self
+            .sessions
             .iter()
-            .map(|todo| {
-                let status = if todo.completed { "✓" } else { "○" };
-                let style = if todo.completed {
+            .map(|session| {
+                let attached_indicator = if session.attached { "●" } else { "○" };
+                let style = if session.attached {
                     Style::default()
                         .fg(Color::Green)
-                        .add_modifier(Modifier::CROSSED_OUT)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
 
-                let content = format!("{} {}", status, todo.title);
+                let content = format!(
+                    "{} {} ({} windows)",
+                    attached_indicator, session.name, session.windows
+                );
                 ListItem::new(content).style(style)
             })
             .collect();
 
-        let filter_text = match self.filter {
-            Filter::All => "All",
-            Filter::Completed => "Completed",
-            Filter::Pending => "Pending",
-        };
-
-        let todos_list = List::new(todos)
+        let sessions_list = List::new(sessions)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(format!("Todos ({})", filter_text)),
+                    .title(format!("tmux Sessions ({})", self.sessions.len())),
             )
-            .highlight_style(Style::default().bg(Color::DarkGray))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol(">> ");
 
-        f.render_stateful_widget(todos_list, chunks[1], &mut self.selected);
+        f.render_stateful_widget(sessions_list, chunks[1], &mut self.selected);
 
         // Status/Input bar
         let status_text = match self.input_mode {
             InputMode::Normal => self.status_message.clone(),
-            InputMode::Editing => format!("New todo: {}", self.input),
+            InputMode::CreatingSession => format!("New session name: {}", self.input),
+            InputMode::RenamingSession => format!("Rename to: {}", self.input),
         };
 
         let status = Paragraph::new(status_text)
             .style(match self.input_mode {
                 InputMode::Normal => Style::default(),
-                InputMode::Editing => Style::default().fg(Color::Yellow),
+                _ => Style::default().fg(Color::Yellow),
             })
             .wrap(Wrap { trim: true })
             .block(Block::default().borders(Borders::ALL).title("Status"));

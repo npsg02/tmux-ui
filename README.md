@@ -1,102 +1,102 @@
-# Template Rust
+# tmux-ui
 
-A Rust project template featuring a todo application with SQLite database and terminal user interface (TUI).
+A terminal user interface (TUI) for managing tmux sessions, windows, and panes.
 
 ## Features
 
-- 📝 Todo management with SQLite persistence
-- 🖥️ Interactive Terminal User Interface (TUI)
-- 🔧 Command Line Interface (CLI)
-- 🧪 Comprehensive test suite
-- 🚀 CI/CD with GitHub Actions
-- 📦 Cross-platform releases
-- 🔒 Security auditing
+- 🖥️ Interactive Terminal User Interface (TUI) for tmux
+- 📋 View and manage tmux sessions
+- 🪟 Create and delete windows
+- 🎯 Quick session switching
+- 🔧 Command Line Interface (CLI) for scripting
+- 🚀 Fast and lightweight
+
+## Prerequisites
+
+- tmux (version 2.0 or later)
+- Rust 1.70 or later (for building from source)
 
 ## Installation
+
+### Using GitHub Codespaces
+
+The easiest way to try tmux-ui is with GitHub Codespaces:
+
+1. Click the "Code" button on the repository
+2. Select "Codespaces" tab
+3. Click "Create codespace on main"
+4. Wait for the environment to set up (~2-3 minutes)
+5. Run `cargo run` to start the TUI
+
+The development environment includes tmux and all necessary dependencies pre-installed. See [.devcontainer/README.md](.devcontainer/README.md) for more details.
 
 ### From Source
 
 ```bash
-git clone https://github.com/pnstack/template-rust.git
-cd template-rust
+git clone https://github.com/npsg02/tmux-ui.git
+cd tmux-ui
 cargo build --release
 ```
 
-### From Releases
-
-Download the latest binary from the [Releases](https://github.com/pnstack/template-rust/releases) page.
+The binary will be available at `./target/release/tmux-ui`
 
 ## Usage
+
+### Interactive TUI (default)
+
+Start the interactive terminal user interface:
+
+```bash
+tmux-ui
+# or explicitly:
+tmux-ui tui
+```
+
+#### TUI Keybindings:
+- `h` - Show help
+- `n` - Create new session
+- `d` - Delete selected session
+- `r` - Rename selected session
+- `a` or `Enter` - Attach to selected session
+- `x` - Detach from selected session
+- `w` - Create new window in selected session
+- `R` - Refresh session list
+- `↑↓` - Navigate sessions
+- `q` - Quit application
 
 ### Command Line Interface
 
 ```bash
+# List all tmux sessions
+tmux-ui list
+
+# Create a new tmux session
+tmux-ui new my-session
+
+# Kill a tmux session
+tmux-ui kill my-session
+
+# Attach to a tmux session
+tmux-ui attach my-session
+
 # Show help
-./template-rust --help
-
-# Add a new todo
-./template-rust add "Buy groceries" --description "Milk, eggs, bread"
-
-# List all todos
-./template-rust list
-
-# List only completed todos
-./template-rust list --completed
-
-# List only pending todos
-./template-rust list --pending
-
-# Complete a todo (use the ID from list command)
-./template-rust complete <todo-id>
-
-# Delete a todo
-./template-rust delete <todo-id>
-
-# Start interactive TUI (default mode)
-./template-rust tui
+tmux-ui --help
 ```
-
-### Terminal User Interface (TUI)
-
-Start the interactive mode:
-
-```bash
-./template-rust tui
-```
-
-#### TUI Commands:
-- `h` - Show help
-- `n` - Add new todo
-- `d` - Delete selected todo
-- `c` - Toggle todo completion status
-- `a` - Show all todos
-- `p` - Show pending todos only
-- `f` - Show completed todos only
-- `↑↓` - Navigate todos
-- `q` - Quit application
 
 ## Project Structure
 
 ```
-template-rust/
-├── .github/workflows/    # CI/CD workflows
+tmux-ui/
 ├── src/
-│   ├── database/         # Database layer
-│   ├── models/           # Data models
-│   ├── tui/              # Terminal UI
+│   ├── tmux.rs           # tmux client and data structures
+│   ├── tui/              # Terminal UI implementation
 │   ├── lib.rs            # Library root
 │   └── main.rs           # CLI application
 ├── tests/                # Integration tests
-├── docs/                 # Documentation
 └── examples/             # Usage examples
 ```
 
 ## Development
-
-### Prerequisites
-
-- Rust 1.70 or later
-- SQLite3
 
 ### Building
 
@@ -122,27 +122,15 @@ cargo clippy -- -D warnings
 cargo fmt
 ```
 
-## Database
+## How It Works
 
-The application uses SQLite for persistence. By default, it creates a `todo.db` file in the current directory. You can specify a different database path:
+tmux-ui interacts with tmux through its command-line interface, parsing the output of commands like:
+- `tmux list-sessions` - to get session information
+- `tmux new-session` - to create new sessions
+- `tmux kill-session` - to delete sessions
+- And more tmux commands for window and pane management
 
-```bash
-./template-rust --database /path/to/your/todos.db list
-```
-
-For testing with in-memory database:
-
-```bash
-./template-rust --database ":memory:" add "Test todo"
-```
-
-## CI/CD
-
-The project includes comprehensive GitHub Actions workflows:
-
-- **CI**: Build, test, lint, and format checks on multiple platforms
-- **Security**: Weekly security audits with `cargo audit`
-- **Release**: Automated binary releases for Linux, macOS, and Windows
+The TUI is built using [ratatui](https://github.com/ratatui-org/ratatui), a modern terminal UI library for Rust.
 
 ## Contributing
 
