@@ -99,6 +99,25 @@ impl TmuxClient {
         env::var("TMUX").is_ok()
     }
 
+    /// Get the current tmux session name (when inside tmux)
+    pub fn get_current_session(&self) -> Result<Option<String>> {
+        if !self.is_inside_tmux() {
+            return Ok(None);
+        }
+
+        let output = Command::new("tmux")
+            .args(["display-message", "-p", "#S"])
+            .output()
+            .context("Failed to get current session")?;
+
+        if !output.status.success() {
+            return Ok(None);
+        }
+
+        let session_name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(Some(session_name))
+    }
+
     /// Switch to a different tmux session (when already inside tmux)
     pub fn switch_client(&self, name: &str) -> Result<()> {
         let status = Command::new("tmux")

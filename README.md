@@ -58,6 +58,7 @@ tmux-ui tui
 - `d` - Delete selected session
 - `r` - Rename selected session
 - `a` or `Enter` - Attach to selected session (switches session if already inside tmux)
+- `b` - Back to tmux-ui management session (when inside tmux after switching)
 - `x` - Detach from current session (exits tmux if already inside tmux, otherwise detaches all clients from selected session)
 - `w` - Create new window in selected session
 - `R` - Refresh session list

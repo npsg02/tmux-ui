@@ -24,6 +24,7 @@ pub struct App {
     input_mode: InputMode,
     status_message: String,
     attach_on_exit: Option<String>,
+    original_session: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +39,9 @@ impl App {
         let mut selected = ListState::default();
         selected.select(Some(0));
 
+        // Store the current session name if inside tmux
+        let original_session = client.get_current_session().ok().flatten();
+
         Self {
             client,
             sessions: Vec::new(),
@@ -46,6 +50,7 @@ impl App {
             input_mode: InputMode::Normal,
             status_message: "Welcome to tmux-ui! Press 'h' for help.".to_string(),
             attach_on_exit: None,
+            original_session,
         }
     }
 
@@ -118,7 +123,7 @@ impl App {
         match key {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::Char('h') => {
-                self.status_message = "Commands: q=quit, n=new, d=delete, a/Enter=attach/switch, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate".to_string();
+                self.status_message = "Commands: q=quit, n=new, d=delete, a/Enter=attach/switch, b=back to UI, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate".to_string();
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::CreatingSession;
@@ -262,6 +267,26 @@ impl App {
             KeyCode::Char('R') => {
                 self.refresh_sessions().await?;
                 self.status_message = "Sessions refreshed!".to_string();
+            }
+            KeyCode::Char('b') => {
+                // Go back to the original session (tmux-ui management session)
+                if self.client.is_inside_tmux() {
+                    if let Some(ref session_name) = self.original_session {
+                        match self.client.switch_client(session_name) {
+                            Ok(_) => {
+                                self.status_message = format!("Switched back to tmux-ui session '{}'", session_name);
+                                self.refresh_sessions().await?;
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Error switching back: {}", e);
+                            }
+                        }
+                    } else {
+                        self.status_message = "Not running from a tmux session".to_string();
+                    }
+                } else {
+                    self.status_message = "Not inside tmux".to_string();
+                }
             }
             _ => {}
         }
