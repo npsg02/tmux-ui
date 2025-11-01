@@ -18,6 +18,18 @@ A terminal user interface (TUI) for managing tmux sessions, windows, and panes.
 
 ## Installation
 
+### Using GitHub Codespaces
+
+The easiest way to try tmux-ui is with GitHub Codespaces:
+
+1. Click the "Code" button on the repository
+2. Select "Codespaces" tab
+3. Click "Create codespace on main"
+4. Wait for the environment to set up (~2-3 minutes)
+5. Run `cargo run` to start the TUI
+
+The development environment includes tmux and all necessary dependencies pre-installed. See [.devcontainer/README.md](.devcontainer/README.md) for more details.
+
 ### From Source
 
 ```bash
