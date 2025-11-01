@@ -415,6 +415,7 @@ impl App {
             .margin(1)
             .constraints([
                 Constraint::Length(3),
+                Constraint::Length(3),
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
@@ -426,6 +427,19 @@ impl App {
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(title, chunks[0]);
+
+        // Action buttons bar
+        let actions_text = if self.client.is_inside_tmux() {
+            "[a] Attach/Switch  [Esc/b] Back to UI  [x] Detach  [n] New  [d] Delete  [r] Rename  [q] Quit"
+        } else {
+            "[a] Attach  [x] Detach  [n] New  [d] Delete  [r] Rename  [w] New Window  [q] Quit"
+        };
+        
+        let actions = Paragraph::new(actions_text)
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Actions"));
+        f.render_widget(actions, chunks[1]);
 
         // Session list
         let sessions: Vec<ListItem> = self
@@ -462,7 +476,7 @@ impl App {
             )
             .highlight_symbol(">> ");
 
-        f.render_stateful_widget(sessions_list, chunks[1], &mut self.selected);
+        f.render_stateful_widget(sessions_list, chunks[2], &mut self.selected);
 
         // Status/Input bar
         let status_text = match self.input_mode {
@@ -479,6 +493,6 @@ impl App {
             .wrap(Wrap { trim: true })
             .block(Block::default().borders(Borders::ALL).title("Status"));
 
-        f.render_widget(status, chunks[2]);
+        f.render_widget(status, chunks[3]);
     }
 }
