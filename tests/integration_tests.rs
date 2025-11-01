@@ -1,4 +1,5 @@
 use tmux_ui::tmux::{TmuxClient, TmuxSession};
+use std::env;
 
 #[test]
 fn test_tmux_client_creation() {
@@ -32,4 +33,26 @@ fn test_list_sessions_when_none_exist() {
     assert!(result.is_ok());
 }
 
+#[test]
+fn test_is_inside_tmux() {
+    let client = TmuxClient::new();
+    
+    // Save current TMUX env var
+    let original = env::var("TMUX").ok();
+    
+    // Test when TMUX is not set
+    env::remove_var("TMUX");
+    assert!(!client.is_inside_tmux());
+    
+    // Test when TMUX is set
+    env::set_var("TMUX", "/tmp/tmux-1000/default,1234,0");
+    assert!(client.is_inside_tmux());
+    
+    // Restore original TMUX env var
+    if let Some(val) = original {
+        env::set_var("TMUX", val);
+    } else {
+        env::remove_var("TMUX");
+    }
+}
 

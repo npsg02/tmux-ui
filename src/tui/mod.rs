@@ -157,11 +157,28 @@ impl App {
                 if let Some(index) = self.selected.selected() {
                     if index < self.sessions.len() {
                         let session = &self.sessions[index];
-                        // Store the session to attach to after TUI exits
-                        self.attach_on_exit = Some(session.name.clone());
-                        self.status_message = format!("Attaching to session '{}'...", session.name);
-                        // Return true to exit TUI, then attach
-                        return Ok(true);
+                        
+                        // Check if we're already inside a tmux session
+                        if self.client.is_inside_tmux() {
+                            // Use switch-client to change to the selected session
+                            // This works within tmux and doesn't require exiting the TUI
+                            match self.client.switch_client(&session.name) {
+                                Ok(_) => {
+                                    self.status_message = format!("Switched to session '{}'", session.name);
+                                    self.refresh_sessions().await?;
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Error switching to session: {}", e);
+                                }
+                            }
+                        } else {
+                            // Not inside tmux, use attach-session
+                            // Store the session to attach to after TUI exits
+                            self.attach_on_exit = Some(session.name.clone());
+                            self.status_message = format!("Attaching to session '{}'...", session.name);
+                            // Return true to exit TUI, then attach
+                            return Ok(true);
+                        }
                     }
                 }
             }

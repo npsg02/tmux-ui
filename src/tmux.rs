@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::env;
 use std::process::Command;
 
 #[derive(Debug, Clone)]
@@ -88,6 +89,25 @@ impl TmuxClient {
 
         if !status.success() {
             anyhow::bail!("Failed to kill session: {}", name);
+        }
+
+        Ok(())
+    }
+
+    /// Check if currently running inside a tmux session
+    pub fn is_inside_tmux(&self) -> bool {
+        env::var("TMUX").is_ok()
+    }
+
+    /// Switch to a different tmux session (when already inside tmux)
+    pub fn switch_client(&self, name: &str) -> Result<()> {
+        let status = Command::new("tmux")
+            .args(["switch-client", "-t", name])
+            .status()
+            .context("Failed to switch tmux client")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to switch to session: {}", name);
         }
 
         Ok(())
