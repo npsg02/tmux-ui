@@ -123,7 +123,7 @@ impl App {
         match key {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::Char('h') => {
-                self.status_message = "Commands: q=quit, n=new, d=delete, a/Enter=attach/switch, b=back to UI, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate".to_string();
+                self.status_message = "Commands: q=quit, n=new, d=delete, a/Enter=attach/switch, Esc/b=back to UI, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate".to_string();
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::CreatingSession;
@@ -270,6 +270,27 @@ impl App {
             }
             KeyCode::Char('b') => {
                 // Go back to the original session (tmux-ui management session)
+                if self.client.is_inside_tmux() {
+                    if let Some(ref session_name) = self.original_session {
+                        match self.client.switch_client(session_name) {
+                            Ok(_) => {
+                                self.status_message = format!("Switched back to tmux-ui session '{}'", session_name);
+                                self.refresh_sessions().await?;
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Error switching back: {}", e);
+                            }
+                        }
+                    } else {
+                        self.status_message = "Not running from a tmux session".to_string();
+                    }
+                } else {
+                    self.status_message = "Not inside tmux".to_string();
+                }
+            }
+            KeyCode::Esc => {
+                // Go back to the original session (tmux-ui management session)
+                // Same as 'b' key
                 if self.client.is_inside_tmux() {
                     if let Some(ref session_name) = self.original_session {
                         match self.client.switch_client(session_name) {
