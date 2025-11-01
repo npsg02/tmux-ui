@@ -9,6 +9,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
@@ -429,14 +430,20 @@ impl App {
         f.render_widget(title, chunks[0]);
 
         // Action buttons bar
-        let actions_text = if self.client.is_inside_tmux() {
-            "[a] Attach/Switch  [Esc/b] Back to UI  [x] Detach  [n] New  [d] Delete  [r] Rename  [q] Quit"
+        let actions_line = if self.client.is_inside_tmux() {
+            Line::from(vec![
+                Span::styled("[a] Attach/Switch  ", Style::default().fg(Color::Yellow)),
+                Span::styled("[Esc/b] Back to UI  ", Style::default().fg(Color::Yellow)),
+                Span::styled("[x] Detach", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("  [n] New  [d] Delete  [r] Rename  [q] Quit", Style::default().fg(Color::Yellow)),
+            ])
         } else {
-            "[a] Attach  [x] Detach  [n] New  [d] Delete  [r] Rename  [w] New Window  [q] Quit"
+            Line::from(vec![
+                Span::styled("[a] Attach  [x] Detach  [n] New  [d] Delete  [r] Rename  [w] New Window  [q] Quit", Style::default().fg(Color::Yellow)),
+            ])
         };
         
-        let actions = Paragraph::new(actions_text)
-            .style(Style::default().fg(Color::Yellow))
+        let actions = Paragraph::new(actions_line)
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL).title("Actions"));
         f.render_widget(actions, chunks[1]);
