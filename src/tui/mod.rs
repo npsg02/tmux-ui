@@ -9,6 +9,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
@@ -24,6 +25,7 @@ pub struct App {
     input_mode: InputMode,
     status_message: String,
     attach_on_exit: Option<String>,
+    original_session: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +40,9 @@ impl App {
         let mut selected = ListState::default();
         selected.select(Some(0));
 
+        // Store the current session name if inside tmux
+        let original_session = client.get_current_session().ok().flatten();
+
         Self {
             client,
             sessions: Vec::new(),
@@ -46,6 +51,7 @@ impl App {
             input_mode: InputMode::Normal,
             status_message: "Welcome to tmux-ui! Press 'h' for help.".to_string(),
             attach_on_exit: None,
+            original_session,
         }
     }
 
@@ -118,7 +124,7 @@ impl App {
         match key {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::Char('h') => {
-                self.status_message = "Commands: q=quit, n=new session, d=delete session, a=attach, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate, Enter=attach".to_string();
+                self.status_message = "Commands: q=quit, n=new, d=delete, a/Enter=attach/switch, Esc/b=back to UI, r=rename, w=new window, x=detach, R=refresh, ↑↓=navigate".to_string();
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::CreatingSession;
@@ -157,11 +163,28 @@ impl App {
                 if let Some(index) = self.selected.selected() {
                     if index < self.sessions.len() {
                         let session = &self.sessions[index];
-                        // Store the session to attach to after TUI exits
-                        self.attach_on_exit = Some(session.name.clone());
-                        self.status_message = format!("Attaching to session '{}'...", session.name);
-                        // Return true to exit TUI, then attach
-                        return Ok(true);
+                        
+                        // Check if we're already inside a tmux session
+                        if self.client.is_inside_tmux() {
+                            // Use switch-client to change to the selected session
+                            // This works within tmux and doesn't require exiting the TUI
+                            match self.client.switch_client(&session.name) {
+                                Ok(_) => {
+                                    self.status_message = format!("Switched to session '{}'", session.name);
+                                    self.refresh_sessions().await?;
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Error switching to session: {}", e);
+                                }
+                            }
+                        } else {
+                            // Not inside tmux, use attach-session
+                            // Store the session to attach to after TUI exits
+                            self.attach_on_exit = Some(session.name.clone());
+                            self.status_message = format!("Attaching to session '{}'...", session.name);
+                            // Return true to exit TUI, then attach
+                            return Ok(true);
+                        }
                     }
                 }
             }
@@ -169,14 +192,31 @@ impl App {
                 if let Some(index) = self.selected.selected() {
                     if index < self.sessions.len() {
                         let session = &self.sessions[index];
-                        match self.client.detach_session(&session.name) {
-                            Ok(_) => {
-                                self.status_message =
-                                    format!("Detached from session '{}'", session.name);
-                                self.refresh_sessions().await?;
+                        
+                        // Check if we're inside a tmux session
+                        if self.client.is_inside_tmux() {
+                            // When inside tmux, detach the current client (exits the TUI and tmux)
+                            match self.client.detach_current_client() {
+                                Ok(_) => {
+                                    self.status_message = "Detaching from tmux...".to_string();
+                                    // Return true to exit TUI since we're detaching from tmux
+                                    return Ok(true);
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Error detaching: {}", e);
+                                }
                             }
-                            Err(e) => {
-                                self.status_message = format!("Error detaching: {}", e);
+                        } else {
+                            // When outside tmux, detach all clients from the selected session
+                            match self.client.detach_session(&session.name) {
+                                Ok(_) => {
+                                    self.status_message =
+                                        format!("Detached from session '{}'", session.name);
+                                    self.refresh_sessions().await?;
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Error detaching: {}", e);
+                                }
                             }
                         }
                     }
@@ -228,6 +268,47 @@ impl App {
             KeyCode::Char('R') => {
                 self.refresh_sessions().await?;
                 self.status_message = "Sessions refreshed!".to_string();
+            }
+            KeyCode::Char('b') => {
+                // Go back to the original session (tmux-ui management session)
+                if self.client.is_inside_tmux() {
+                    if let Some(ref session_name) = self.original_session {
+                        match self.client.switch_client(session_name) {
+                            Ok(_) => {
+                                self.status_message = format!("Switched back to tmux-ui session '{}'", session_name);
+                                self.refresh_sessions().await?;
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Error switching back: {}", e);
+                            }
+                        }
+                    } else {
+                        self.status_message = "Not running from a tmux session".to_string();
+                    }
+                } else {
+                    self.status_message = "Not inside tmux".to_string();
+                }
+            }
+            KeyCode::Esc => {
+                // Go back to the original session (tmux-ui management session)
+                // Same as 'b' key
+                if self.client.is_inside_tmux() {
+                    if let Some(ref session_name) = self.original_session {
+                        match self.client.switch_client(session_name) {
+                            Ok(_) => {
+                                self.status_message = format!("Switched back to tmux-ui session '{}'", session_name);
+                                self.refresh_sessions().await?;
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Error switching back: {}", e);
+                            }
+                        }
+                    } else {
+                        self.status_message = "Not running from a tmux session".to_string();
+                    }
+                } else {
+                    self.status_message = "Not inside tmux".to_string();
+                }
             }
             _ => {}
         }
@@ -335,6 +416,7 @@ impl App {
             .margin(1)
             .constraints([
                 Constraint::Length(3),
+                Constraint::Length(3),
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
@@ -346,6 +428,25 @@ impl App {
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(title, chunks[0]);
+
+        // Action buttons bar
+        let actions_line = if self.client.is_inside_tmux() {
+            Line::from(vec![
+                Span::styled("[a] Attach/Switch  ", Style::default().fg(Color::Yellow)),
+                Span::styled("[Esc/b] Back to UI  ", Style::default().fg(Color::Yellow)),
+                Span::styled("[x] Detach", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("  [n] New  [d] Delete  [r] Rename  [q] Quit", Style::default().fg(Color::Yellow)),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled("[a] Attach  [x] Detach  [n] New  [d] Delete  [r] Rename  [w] New Window  [q] Quit", Style::default().fg(Color::Yellow)),
+            ])
+        };
+        
+        let actions = Paragraph::new(actions_line)
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Actions"));
+        f.render_widget(actions, chunks[1]);
 
         // Session list
         let sessions: Vec<ListItem> = self
@@ -382,7 +483,7 @@ impl App {
             )
             .highlight_symbol(">> ");
 
-        f.render_stateful_widget(sessions_list, chunks[1], &mut self.selected);
+        f.render_stateful_widget(sessions_list, chunks[2], &mut self.selected);
 
         // Status/Input bar
         let status_text = match self.input_mode {
@@ -399,6 +500,6 @@ impl App {
             .wrap(Wrap { trim: true })
             .block(Block::default().borders(Borders::ALL).title("Status"));
 
-        f.render_widget(status, chunks[2]);
+        f.render_widget(status, chunks[3]);
     }
 }

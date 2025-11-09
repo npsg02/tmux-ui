@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::env;
 use std::process::Command;
 
 #[derive(Debug, Clone)]
@@ -88,6 +89,44 @@ impl TmuxClient {
 
         if !status.success() {
             anyhow::bail!("Failed to kill session: {}", name);
+        }
+
+        Ok(())
+    }
+
+    /// Check if currently running inside a tmux session
+    pub fn is_inside_tmux(&self) -> bool {
+        env::var("TMUX").is_ok()
+    }
+
+    /// Get the current tmux session name (when inside tmux)
+    pub fn get_current_session(&self) -> Result<Option<String>> {
+        if !self.is_inside_tmux() {
+            return Ok(None);
+        }
+
+        let output = Command::new("tmux")
+            .args(["display-message", "-p", "#S"])
+            .output()
+            .context("Failed to get current session")?;
+
+        if !output.status.success() {
+            return Ok(None);
+        }
+
+        let session_name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(Some(session_name))
+    }
+
+    /// Switch to a different tmux session (when already inside tmux)
+    pub fn switch_client(&self, name: &str) -> Result<()> {
+        let status = Command::new("tmux")
+            .args(["switch-client", "-t", name])
+            .status()
+            .context("Failed to switch tmux client")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to switch to session: {}", name);
         }
 
         Ok(())
@@ -192,6 +231,20 @@ impl TmuxClient {
 
         if !status.success() {
             anyhow::bail!("Failed to rename session from {} to {}", old_name, new_name);
+        }
+
+        Ok(())
+    }
+
+    /// Detach the current client (when inside tmux)
+    pub fn detach_current_client(&self) -> Result<()> {
+        let status = Command::new("tmux")
+            .args(["detach-client"])
+            .status()
+            .context("Failed to detach current client")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to detach current client");
         }
 
         Ok(())
